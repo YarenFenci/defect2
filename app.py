@@ -10,9 +10,10 @@ import streamlit as st
 # ──────────────────────────────────────────────
 # Config
 # ──────────────────────────────────────────────
-CANDIDATE_TFIDF_THRESHOLD = 0.45
+CANDIDATE_TFIDF_THRESHOLD = 0.40
 TOP_K_NEIGHBORS           = 50
-EMB_DUPLICATE_THRESHOLD   = 0.88   # cosine >= this -> duplicate
+EMB_EXACT_THRESHOLD       = 0.97   # cosine >= this -> Exact (near-identical content)
+EMB_SEMANTIC_THRESHOLD    = 0.84   # cosine >= this -> Semantic (same meaning, different words)
 MIN_TOKENS                = 8
 
 SENTENCE_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
@@ -217,13 +218,21 @@ def run_pipeline(
             continue
 
         score = float(np.dot(emb[ki], emb[di]))
-        if score < EMB_DUPLICATE_THRESHOLD:
+        if score < EMB_SEMANTIC_THRESHOLD:
             continue
 
-        # Exact: normalised texts are identical
         norm_ki = work["_norm"].iloc[ki]
         norm_di = work["_norm"].iloc[di]
-        dup_type = "Exact" if norm_ki == norm_di else "Semantic"
+        set_ki  = work["_set"].iloc[ki]
+        set_di  = work["_set"].iloc[di]
+
+        # Exact: identical text OR token overlap >= 95%
+        tok_union = len(set_ki | set_di)
+        jac = len(set_ki & set_di) / tok_union if tok_union > 0 else 0.0
+        if norm_ki == norm_di or jac >= 0.90:
+            dup_type = "Exact"
+        else:
+            dup_type = "Semantic"
 
         rows.append({
             "Issue (Keep)":      work["_key"].iloc[ki],
@@ -242,12 +251,13 @@ def run_pipeline(
     )
 
     summary_df = pd.DataFrame([
-        {"Metric": "Total issues",         "Value": n},
-        {"Metric": "Semantic model",       "Value": SENTENCE_MODEL_NAME},
-        {"Metric": "Similarity threshold", "Value": EMB_DUPLICATE_THRESHOLD},
-        {"Metric": "Duplicates found",     "Value": len(dup_df)},
-        {"Metric": "Exact",                "Value": int((dup_df["Type"] == "Exact").sum())   if not dup_df.empty else 0},
-        {"Metric": "Semantic",             "Value": int((dup_df["Type"] == "Semantic").sum()) if not dup_df.empty else 0},
+        {"Metric": "Total issues",          "Value": n},
+        {"Metric": "Semantic model",        "Value": SENTENCE_MODEL_NAME},
+        {"Metric": "Exact threshold",       "Value": EMB_EXACT_THRESHOLD},
+        {"Metric": "Semantic threshold",    "Value": EMB_SEMANTIC_THRESHOLD},
+        {"Metric": "Duplicates found",      "Value": len(dup_df)},
+        {"Metric": "Exact",                 "Value": int((dup_df["Type"] == "Exact").sum())    if not dup_df.empty else 0},
+        {"Metric": "Semantic",              "Value": int((dup_df["Type"] == "Semantic").sum()) if not dup_df.empty else 0},
     ])
 
     return summary_df, dup_df

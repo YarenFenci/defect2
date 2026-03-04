@@ -279,7 +279,7 @@ def main():
     if model is None:
         st.stop()
 
-    uploaded = st.file_uploader("Upload defects CSV", type=["csv"])
+    uploaded = st.file_uploader("Upload defects CSV", type=["csv"], key="defect_csv_upload")
     if not uploaded:
         st.stop()
 
@@ -313,10 +313,6 @@ def main():
         file_name="defect_duplicates.csv",
         mime="text/csv",
     )
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

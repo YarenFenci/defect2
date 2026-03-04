@@ -13,7 +13,7 @@ import streamlit as st
 CANDIDATE_TFIDF_THRESHOLD = 0.40
 TOP_K_NEIGHBORS           = 50
 EMB_EXACT_THRESHOLD       = 0.97   # cosine >= this -> Exact (near-identical content)
-EMB_SEMANTIC_THRESHOLD    = 0.80   # cosine >= this -> Semantic (same meaning, different words)
+EMB_SEMANTIC_THRESHOLD    = 0.82   # cosine >= this -> Semantic (same meaning, different words)
 MIN_TOKENS                = 8
 
 SENTENCE_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
@@ -141,6 +141,7 @@ def load_and_preprocess(raw_csv: str):
     summary_col = pick_col(cols, ["summary", "title"])              or cols[0]
     desc_col    = pick_col(cols, ["description"])                   or cols[0]
     created_col = pick_col(cols, ["created", "created date", "created_at", "createdat"])
+    tester_col  = pick_col(cols, ["assignee", "tester", "reporter", "assigned to", "owner"])
 
     w = df.copy()
     w["_key"]       = w[key_col].astype(str).str.strip()
@@ -153,12 +154,14 @@ def load_and_preprocess(raw_csv: str):
         for a, b in zip(w[summary_col], w[desc_col])
     ]
 
+    w["_tester"]  = w[tester_col].fillna("").astype(str).str.strip() if tester_col else pd.Series([""] * len(w))
     created_dt = parse_created(w[created_col]) if created_col else None
     detected = {
         "Issue Key":          key_col,
         "Summary / Title":    summary_col,
         "Description":        desc_col,
         "Created (optional)": created_col or "(not found)",
+        "Tester / Assignee":  tester_col  or "(not found)",
     }
     return w, created_dt, detected
 
@@ -235,10 +238,12 @@ def run_pipeline(
             dup_type = "Semantic"
 
         rows.append({
-            "Issue (Keep)":      work["_key"].iloc[ki],
-            "Issue (Duplicate)": work["_key"].iloc[di],
-            "Type":              dup_type,
-            "Similarity":        round(score, 3),
+            "Issue (Keep)":       work["_key"].iloc[ki],
+            "Tester (Keep)":      work["_tester"].iloc[ki],
+            "Issue (Duplicate)":  work["_key"].iloc[di],
+            "Tester (Duplicate)": work["_tester"].iloc[di],
+            "Type":               dup_type,
+            "Similarity":         round(score, 3),
         })
         deleted.add(di)
 
@@ -304,10 +309,14 @@ def main():
     st.divider()
     st.download_button(
         label="Download Results",
-        data=dup_df[["Issue (Keep)", "Issue (Duplicate)", "Type"]].to_csv(index=False).encode("utf-8"),
+        data=dup_df[["Issue (Keep)", "Tester (Keep)", "Issue (Duplicate)", "Tester (Duplicate)", "Type"]].to_csv(index=False).encode("utf-8"),
         file_name="defect_duplicates.csv",
         mime="text/csv",
     )
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
